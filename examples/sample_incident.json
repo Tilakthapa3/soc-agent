@@ -1,0 +1,1 @@
+{"count":14,"detail":"14 failed SSH logins in 5 minutes, then a successful login","service":"ssh","severity":"CRITICAL","source_ip":"203.0.113.45","type":"login_after_brute_force"}
