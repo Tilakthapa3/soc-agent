@@ -39,6 +39,9 @@ python3 soc_agent.py --demo --model ollama
 # Score the agent on the labeled eval cases
 python3 evals.py
 python3 evals.py --model ollama
+
+# Phone web app (step 4)
+python3 app/server.py   # http://127.0.0.1:8081
 ```
 
 ## Step 2 (done)
@@ -64,6 +67,19 @@ python3 evals.py --model ollama
   compared across models and over time.
 - `tests/test_evals.py`: 10 tests (case file validity, full-marks run,
   wrong-expectation failure, score line). Total: 33 tests passing.
+
+## Step 4 (done): phone web app
+
+- `app/server.py` + `app/static/`: mobile-friendly page — paste an
+  incident or finding as JSON, get the verdict back. Model selector
+  (Mock offline, or local Ollama), sample buttons, live evals score
+  (12/12), PWA manifest + generated home-screen icons (white S on
+  dark navy). No sign-in, no keys, nothing saved.
+- `tests/test_app.py`: 11 tests driving the real server over HTTP.
+  Total: 44 tests passing.
+- Run it: `python3 app/server.py` (http://127.0.0.1:8081). On a phone,
+  reach it through a tunnel or any host that serves it, then Add to
+  Home Screen.
 
 ## Roadmap
 

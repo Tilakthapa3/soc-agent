@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0b1220">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="SOC Agent">
+<link rel="manifest" href="/manifest.json">
+<link rel="apple-touch-icon" href="/icon-192.png">
+<title>SOC Agent</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: #0b1220; color: #e2e8f0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  .wrap { max-width: 640px; margin: 0 auto; padding: 20px 16px 48px; }
+  h1 { font-size: 26px; margin: 0 0 4px; letter-spacing: -0.02em; }
+  h1 .badge {
+    font-size: 11px; vertical-align: middle; background: #1e293b;
+    color: #94a3b8; border-radius: 999px; padding: 3px 8px; margin-left: 6px;
+    letter-spacing: 0.02em; font-weight: 600;
+  }
+  .sub { color: #94a3b8; margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
+  .evals {
+    background: #111c33; border: 1px solid #1e293b; border-radius: 12px;
+    padding: 12px 14px; font-size: 14px; margin-bottom: 16px;
+  }
+  .evals b { color: #4ade80; }
+  label { display: block; font-size: 13px; font-weight: 600; color: #94a3b8; margin: 16px 0 6px; }
+  select, textarea {
+    width: 100%; background: #111c33; color: #e2e8f0;
+    border: 1px solid #334155; border-radius: 10px; font-size: 15px;
+  }
+  select { padding: 12px; }
+  textarea { padding: 12px; min-height: 150px; font-family: ui-monospace, Menlo, monospace; }
+  .row { display: flex; gap: 8px; margin-top: 10px; flex-wrap: wrap; }
+  button {
+    flex: 1; min-width: 120px; padding: 13px 10px; border: 0; border-radius: 10px;
+    font-size: 15px; font-weight: 600; cursor: pointer;
+  }
+  button.primary { background: #2563eb; color: #fff; }
+  button.ghost { background: #1e293b; color: #e2e8f0; }
+  button:disabled { opacity: 0.55; cursor: default; }
+  #result { margin-top: 18px; display: none; }
+  .card { background: #111c33; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }
+  .verdict-line { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+  .verdict {
+    font-size: 20px; font-weight: 800; letter-spacing: -0.01em;
+  }
+  .verdict.CONFIRMED_THREAT { color: #f87171; }
+  .verdict.LIKELY_THREAT { color: #fbbf24; }
+  .verdict.BENIGN { color: #4ade80; }
+  .verdict.NEEDS_REVIEW { color: #60a5fa; }
+  .severity {
+    font-size: 12px; font-weight: 700; padding: 3px 9px; border-radius: 999px;
+    background: #1e293b; color: #e2e8f0;
+  }
+  .cause { margin: 12px 0 4px; line-height: 1.55; font-size: 15px; }
+  .meta { color: #94a3b8; font-size: 13px; line-height: 1.6; margin: 8px 0 0; }
+  .meta b { color: #cbd5e1; }
+  .actions { margin: 12px 0 0; padding-left: 18px; line-height: 1.6; font-size: 14px; }
+  .actions li { margin-bottom: 4px; }
+  .error {
+    margin-top: 18px; display: none; background: #3b1111; border: 1px solid #7f1d1d;
+    color: #fecaca; border-radius: 12px; padding: 14px 16px; font-size: 14px; line-height: 1.5;
+  }
+  .foot { margin-top: 24px; color: #64748b; font-size: 12.5px; line-height: 1.6; text-align: center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>SOC Agent <span class="badge">READ-ONLY</span></h1>
+  <p class="sub">Paste a detection incident or a scan finding as JSON. The agent reads it, adds MITRE guidance, and gives a verdict. It never acts on anything.</p>
+
+  <div class="evals" id="evals">Evals: checking&hellip;</div>
+
+  <label for="model">Model</label>
+  <select id="model">
+    <option value="mock" selected>Mock (offline, no setup)</option>
+    <option value="ollama">Local Ollama (needs ollama serve)</option>
+  </select>
+
+  <label for="item">Incident or finding (JSON)</label>
+  <textarea id="item" spellcheck="false" placeholder='{"type": "login_after_brute_force", "severity": "CRITICAL", "source_ip": "203.0.113.45", "service": "ssh", "count": 14, "detail": "14 failed SSH logins in 5 minutes, then a successful login"}'></textarea>
+  <div class="row">
+    <button class="ghost" id="sample-incident" type="button">Sample incident</button>
+    <button class="ghost" id="sample-finding" type="button">Sample finding</button>
+  </div>
+  <div class="row">
+    <button class="primary" id="triage" type="button">Triage it</button>
+  </div>
+
+  <div class="error" id="error"></div>
+  <div id="result"></div>
+
+  <p class="foot">Read-only by design. Nothing is blocked, changed, or saved.<br>No sign-in, no keys, no data leaves your device except the verdict request itself.</p>
+</div>
+<script>
+const $ = (id) => document.getElementById(id);
+
+const SAMPLE_INCIDENT = {
+  type: "login_after_brute_force",
+  severity: "CRITICAL",
+  source_ip: "203.0.113.45",
+  service: "ssh",
+  count: 14,
+  detail: "14 failed SSH logins in 5 minutes, then a successful login"
+};
+const SAMPLE_FINDING = {
+  port: 23, protocol: "tcp", service: "telnet",
+  state: "open", host: "192.168.1.10"
+};
+
+function showError(msg) {
+  const el = $("error");
+  el.style.display = "block";
+  el.textContent = msg;
+  $("result").style.display = "none";
+}
+
+function showResult(v) {
+  $("error").style.display = "none";
+  const el = $("result");
+  const actions = (v.actions || []).map(a => "<li>" + escapeHtml(a) + "</li>").join("");
+  el.innerHTML =
+    '<div class="card">' +
+      '<div class="verdict-line"><span class="verdict ' + escapeHtml(v.verdict) + '">' + escapeHtml(v.verdict) + '</span>' +
+      '<span class="severity">' + escapeHtml(v.severity) + '</span></div>' +
+      '<p class="cause">' + escapeHtml(v.cause) + '</p>' +
+      '<p class="meta">Confidence: <b>' + escapeHtml(v.confidence) + '</b>' +
+      (v.guidance_mitre ? ' &nbsp;·&nbsp; MITRE: <b>' + escapeHtml(v.guidance_mitre) + '</b>' : '') + '<br>' +
+      escapeHtml(v.item || '') + '</p>' +
+      (actions ? '<ul class="actions">' + actions + '</ul>' : '') +
+    '</div>';
+  el.style.display = "block";
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"
+  }[c]));
+}
+
+async function loadEvals() {
+  try {
+    const res = await fetch("/api/evals");
+    const data = await res.json();
+    $("evals").innerHTML = "Evals: <b>" + data.passed + "/" + data.total +
+      " (" + data.percent + "%)</b> &nbsp;·&nbsp; accuracy is a number, not a feeling.";
+  } catch (e) {
+    $("evals").textContent = "Evals: unavailable right now.";
+  }
+}
+
+$("sample-incident").addEventListener("click", () => {
+  $("item").value = JSON.stringify(SAMPLE_INCIDENT, null, 2);
+});
+$("sample-finding").addEventListener("click", () => {
+  $("item").value = JSON.stringify(SAMPLE_FINDING, null, 2);
+});
+$("triage").addEventListener("click", async () => {
+  let item;
+  try {
+    item = JSON.parse($("item").value);
+  } catch (e) {
+    showError("That is not valid JSON. Check the brackets and quotes, or tap a sample first.");
+    return;
+  }
+  const btn = $("triage");
+  btn.disabled = true;
+  btn.textContent = "Triaging…";
+  try {
+    const res = await fetch("/api/triage", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ item, model: $("model").value })
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      showError(data.error || ("Server error (" + res.status + ")."));
+    } else {
+      showResult(data);
+    }
+  } catch (e) {
+    showError("Could not reach the server. Is it still running?");
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Triage it";
+  }
+});
+
+$("item").value = JSON.stringify(SAMPLE_INCIDENT, null, 2);
+loadEvals();
+</script>
+</body>
+</html>
