@@ -35,9 +35,16 @@
     text-align: center; color: #94a3b8; font-size: 13px;
     margin-top: 8px; min-height: 18px; line-height: 1.4;
   }
+  .voice-row {
+    display: flex; justify-content: center; align-items: center; gap: 8px;
+    margin-top: 4px; flex-wrap: wrap;
+  }
   label.voice {
     display: flex; justify-content: center; align-items: center; gap: 6px;
-    font-size: 13px; font-weight: 400; color: #94a3b8; margin: 4px 0 0;
+    font-size: 13px; font-weight: 400; color: #94a3b8; margin: 0;
+  }
+  select#voice {
+    width: auto; max-width: 230px; padding: 6px 8px; font-size: 13px;
   }
   .evals {
     background: #111c33; border: 1px solid #1e293b; border-radius: 12px;
@@ -93,7 +100,10 @@
   <div class="face-panel">
     <canvas id="face" height="200" aria-label="SOC Agent face"></canvas>
     <div class="face-status" id="face-status">Watching &mdash; paste an incident and triage it.</div>
-    <label class="voice"><input type="checkbox" id="speak"> Speak verdicts</label>
+    <div class="voice-row">
+      <label class="voice"><input type="checkbox" id="speak"> Speak verdicts</label>
+      <select id="voice" aria-label="Voice for spoken verdicts"></select>
+    </div>
   </div>
 
   <div class="evals" id="evals">Evals: checking&hellip;</div>
@@ -286,13 +296,54 @@ function faceStart() {
   }
 }
 
+// Voice picker for spoken verdicts: lists the voices the device
+// already has (an iPhone Personal Voice shows up here if the browser
+// can see it). The choice is remembered on this device only.
+const VOICE_KEY = "soc-agent-voice";
+function fillVoices() {
+  const sel = $("voice");
+  if (!("speechSynthesis" in window)) { sel.disabled = true; return; }
+  const voices = window.speechSynthesis.getVoices();
+  let saved = null;
+  try { saved = localStorage.getItem(VOICE_KEY); } catch (e) {}
+  sel.innerHTML = "";
+  if (!voices.length) {
+    const o = document.createElement("option");
+    o.textContent = "Default voice";
+    sel.appendChild(o);
+    sel.disabled = true;
+    return;
+  }
+  sel.disabled = false;
+  voices.forEach(v => {
+    const o = document.createElement("option");
+    o.value = v.voiceURI;
+    o.textContent = v.name + (v.lang ? " (" + v.lang + ")" : "");
+    sel.appendChild(o);
+  });
+  if (saved) sel.value = saved;
+}
+$("voice").addEventListener("change", e => {
+  try { localStorage.setItem(VOICE_KEY, e.target.value); } catch (err) {}
+});
+if ("speechSynthesis" in window) {
+  fillVoices();
+  window.speechSynthesis.onvoiceschanged = fillVoices;
+} else {
+  $("voice").disabled = true;
+}
+
 function speakVerdict(v) {
   if (!$("speak").checked) return;
   if (!("speechSynthesis" in window)) return;
   try {
     window.speechSynthesis.cancel();
     const text = "Verdict " + v.verdict + ". Severity " + v.severity + ". " + v.cause;
-    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+    const u = new SpeechSynthesisUtterance(text);
+    const pick = $("voice").value;
+    const voice = window.speechSynthesis.getVoices().find(v => v.voiceURI === pick);
+    if (voice) u.voice = voice;
+    window.speechSynthesis.speak(u);
   } catch (e) { /* speech is a nicety, never break triage for it */ }
 }
 

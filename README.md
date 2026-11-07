@@ -89,7 +89,9 @@ python3 app/server.py   # http://127.0.0.1:8081
   LIKELY_THREAT, red CONFIRMED_THREAT — so the severity reads at a
   glance. A status line says what it is doing, and an optional
   "Speak verdicts" toggle reads the verdict aloud (phone speech
-  synthesis, off by default).
+  synthesis, off by default), with a voice picker listing the voices
+  installed on the device — an iPhone Personal Voice shows up there
+  too if the browser can see it.
 - Vanilla canvas, no dependencies, no camera: the face reacts to
   verdicts, it does not watch the room. It pauses when the tab is
   hidden and stays still for `prefers-reduced-motion`.

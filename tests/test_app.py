@@ -65,6 +65,14 @@ class AppTests(unittest.TestCase):
         self.assertIn(b"Speak verdicts", body)
         self.assertIn(b"face-status", body)
 
+    def test_home_page_has_voice_picker(self):
+        # Step 5 follow-up: pick which installed voice reads verdicts.
+        status, body = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn(b'id="voice"', body)
+        self.assertIn(b"speechSynthesis", body)
+        self.assertIn(b"getVoices", body)
+
     def test_health(self):
         status, body = self.get("/api/health")
         self.assertEqual(status, 200)
