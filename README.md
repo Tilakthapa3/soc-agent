@@ -75,11 +75,24 @@ python3 app/server.py   # http://127.0.0.1:8081
   (Mock offline, or local Ollama), sample buttons, live evals score
   (12/12), PWA manifest + generated home-screen icons (white S on
   dark navy). No sign-in, no keys, nothing saved.
-- `tests/test_app.py`: 11 tests driving the real server over HTTP.
-  Total: 44 tests passing.
+- `tests/test_app.py`: 12 tests driving the real server over HTTP.
+  Total: 45 tests passing.
 - Run it: `python3 app/server.py` (http://127.0.0.1:8081). On a phone,
   reach it through a tunnel or any host that serves it, then Add to
   Home Screen.
+
+## Step 5 (done): a face for the agent
+
+- `app/static/index.html`: a particle humanoid at the top of the phone
+  page. It idles in calm blue, swirls while triaging, then takes the
+  verdict's colour — green BENIGN, blue NEEDS_REVIEW, amber
+  LIKELY_THREAT, red CONFIRMED_THREAT — so the severity reads at a
+  glance. A status line says what it is doing, and an optional
+  "Speak verdicts" toggle reads the verdict aloud (phone speech
+  synthesis, off by default).
+- Vanilla canvas, no dependencies, no camera: the face reacts to
+  verdicts, it does not watch the room. It pauses when the tab is
+  hidden and stays still for `prefers-reduced-motion`.
 
 ## Roadmap
 

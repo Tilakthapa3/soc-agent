@@ -26,6 +26,19 @@
     letter-spacing: 0.02em; font-weight: 600;
   }
   .sub { color: #94a3b8; margin: 0 0 16px; font-size: 14px; line-height: 1.5; }
+  .face-panel {
+    background: #0d1526; border: 1px solid #1e293b; border-radius: 12px;
+    padding: 12px 12px 10px; margin-bottom: 16px;
+  }
+  .face-panel canvas { width: 100%; height: 200px; display: block; }
+  .face-status {
+    text-align: center; color: #94a3b8; font-size: 13px;
+    margin-top: 8px; min-height: 18px; line-height: 1.4;
+  }
+  label.voice {
+    display: flex; justify-content: center; align-items: center; gap: 6px;
+    font-size: 13px; font-weight: 400; color: #94a3b8; margin: 4px 0 0;
+  }
   .evals {
     background: #111c33; border: 1px solid #1e293b; border-radius: 12px;
     padding: 12px 14px; font-size: 14px; margin-bottom: 16px;
@@ -77,6 +90,12 @@
   <h1>SOC Agent <span class="badge">READ-ONLY</span></h1>
   <p class="sub">Paste a detection incident or a scan finding as JSON. The agent reads it, adds MITRE guidance, and gives a verdict. It never acts on anything.</p>
 
+  <div class="face-panel">
+    <canvas id="face" height="200" aria-label="SOC Agent face"></canvas>
+    <div class="face-status" id="face-status">Watching &mdash; paste an incident and triage it.</div>
+    <label class="voice"><input type="checkbox" id="speak"> Speak verdicts</label>
+  </div>
+
   <div class="evals" id="evals">Evals: checking&hellip;</div>
 
   <label for="model">Model</label>
@@ -103,6 +122,184 @@
 <script>
 const $ = (id) => document.getElementById(id);
 
+// ---------------------------------------------------------------------------
+// Face: a particle humanoid that shows the agent's state.
+// Idle blue, thinking bright, then the verdict colour: green BENIGN,
+// blue NEEDS_REVIEW, amber LIKELY_THREAT, red CONFIRMED_THREAT.
+// Vanilla canvas, no dependencies. No camera, no tracking: the face
+// reacts to verdicts, it does not watch the room.
+// ---------------------------------------------------------------------------
+
+const FACE_COLORS = {
+  idle: [96, 165, 250],
+  thinking: [125, 211, 252],
+  BENIGN: [74, 222, 128],
+  NEEDS_REVIEW: [96, 165, 250],
+  LIKELY_THREAT: [251, 191, 36],
+  CONFIRMED_THREAT: [248, 113, 113],
+  error: [148, 163, 184]
+};
+const FACE_ENERGY = { idle: 1, thinking: 2.6, verdict: 1.4, error: 0.6 };
+
+const face = {
+  canvas: $("face"),
+  ctx: null,
+  particles: [],
+  color: FACE_COLORS.idle.slice(),
+  targetColor: FACE_COLORS.idle.slice(),
+  energy: FACE_ENERGY.idle,
+  targetEnergy: FACE_ENERGY.idle,
+  pulse: 0,
+  running: false,
+  reducedMotion: window.matchMedia("(prefers-reduced-motion: reduce)").matches
+};
+
+function faceResize() {
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  const rect = face.canvas.getBoundingClientRect();
+  face.canvas.width = Math.max(1, Math.round(rect.width * dpr));
+  face.canvas.height = Math.max(1, Math.round(200 * dpr));
+  face.dpr = dpr;
+  face.w = face.canvas.width;
+  face.h = face.canvas.height;
+  faceHome();
+}
+
+function faceHome() {
+  // Home positions: a bust silhouette. Head = circle, shoulders = arc.
+  const cx = face.w / 2, cy = face.h * 0.34, headR = face.h * 0.17;
+  const shR = face.h * 0.46, shCy = face.h * 1.02;
+  face.particles = [];
+  for (let i = 0; i < 90; i++) {
+    let hx, hy;
+    if (i < 50) {
+      const a = Math.random() * Math.PI * 2;
+      const r = headR * (0.82 + Math.random() * 0.36);
+      hx = cx + Math.cos(a) * r;
+      hy = cy + Math.sin(a) * r * 1.15;
+    } else {
+      const a = Math.PI * (1.12 + Math.random() * 0.76); // upper arc
+      const r = shR * (0.88 + Math.random() * 0.24);
+      hx = cx + Math.cos(a) * r;
+      hy = shCy + Math.sin(a) * r;
+    }
+    face.particles.push({
+      hx, hy,
+      x: hx + (Math.random() - 0.5) * face.w * 0.6,
+      y: hy + (Math.random() - 0.5) * face.h * 0.6,
+      vx: 0, vy: 0,
+      seed: Math.random() * Math.PI * 2,
+      size: 1.2 + Math.random() * 1.6
+    });
+  }
+}
+
+function faceSet(state, label, verdict) {
+  if (state === "verdict" && FACE_COLORS[verdict]) {
+    face.targetColor = FACE_COLORS[verdict].slice();
+    face.targetEnergy = FACE_ENERGY.verdict;
+    face.pulse = 3;
+  } else if (state === "thinking") {
+    face.targetColor = FACE_COLORS.thinking.slice();
+    face.targetEnergy = FACE_ENERGY.thinking;
+  } else if (state === "error") {
+    face.targetColor = FACE_COLORS.error.slice();
+    face.targetEnergy = FACE_ENERGY.error;
+  } else {
+    face.targetColor = FACE_COLORS.idle.slice();
+    face.targetEnergy = FACE_ENERGY.idle;
+  }
+  $("face-status").textContent = label;
+  if (face.reducedMotion) faceDraw();
+}
+
+function faceTick(t) {
+  const ctx = face.ctx;
+  // Ease colour and energy toward their targets.
+  for (let i = 0; i < 3; i++) {
+    face.color[i] += (face.targetColor[i] - face.color[i]) * 0.07;
+  }
+  face.energy += (face.targetEnergy - face.energy) * 0.05;
+  face.pulse *= 0.985;
+  const energy = Math.max(face.energy, face.pulse);
+  const breathe = 1 + Math.sin(t / 900) * 0.012 * energy;
+
+  ctx.clearRect(0, 0, face.w, face.h);
+  const cx = face.w / 2, cy = face.h * 0.34;
+  const rgb = face.color.map(c => Math.round(c)).join(",");
+  const parts = face.particles;
+  for (const p of parts) {
+    // Spring home, with a little wander. Breathing scales the home.
+    const hx = cx + (p.hx - cx) * breathe;
+    const hy = cy + (p.hy - cy) * breathe;
+    p.vx += (hx - p.x) * 0.02 * energy;
+    p.vy += (hy - p.y) * 0.02 * energy;
+    p.vx += Math.sin(t / 700 + p.seed) * 0.03 * energy;
+    p.vy += Math.cos(t / 800 + p.seed) * 0.03 * energy;
+    p.vx *= 0.88; p.vy *= 0.88;
+    p.x += p.vx; p.y += p.vy;
+  }
+  // Faint links between near neighbours.
+  for (let i = 0; i < parts.length; i++) {
+    for (let j = i + 1; j < parts.length; j++) {
+      const dx = parts[i].x - parts[j].x, dy = parts[i].y - parts[j].y;
+      const d2 = dx * dx + dy * dy;
+      if (d2 < 34 * 34 * face.dpr * face.dpr) {
+        const a = (1 - Math.sqrt(d2) / (34 * face.dpr)) * 0.14;
+        ctx.strokeStyle = "rgba(" + rgb + "," + a.toFixed(3) + ")";
+        ctx.lineWidth = face.dpr * 0.6;
+        ctx.beginPath();
+        ctx.moveTo(parts[i].x, parts[i].y);
+        ctx.lineTo(parts[j].x, parts[j].y);
+        ctx.stroke();
+      }
+    }
+  }
+  // Glow + core for each particle.
+  for (const p of parts) {
+    const r = p.size * face.dpr;
+    ctx.fillStyle = "rgba(" + rgb + ",0.10)";
+    ctx.beginPath(); ctx.arc(p.x, p.y, r * 3.2, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = "rgba(" + rgb + ",0.9)";
+    ctx.beginPath(); ctx.arc(p.x, p.y, r, 0, Math.PI * 2); ctx.fill();
+  }
+  if (face.running) requestAnimationFrame(faceTick);
+}
+
+function faceDraw() {
+  faceTick(performance.now());
+}
+
+function faceStart() {
+  face.ctx = face.canvas.getContext("2d");
+  faceResize();
+  window.addEventListener("resize", faceResize);
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) { face.running = false; }
+    else if (!face.reducedMotion) { face.running = true; requestAnimationFrame(faceTick); }
+  });
+  if (face.reducedMotion) {
+    faceDraw();
+  } else {
+    face.running = true;
+    requestAnimationFrame(faceTick);
+  }
+}
+
+function speakVerdict(v) {
+  if (!$("speak").checked) return;
+  if (!("speechSynthesis" in window)) return;
+  try {
+    window.speechSynthesis.cancel();
+    const text = "Verdict " + v.verdict + ". Severity " + v.severity + ". " + v.cause;
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(text));
+  } catch (e) { /* speech is a nicety, never break triage for it */ }
+}
+
+// ---------------------------------------------------------------------------
+// Triage page (unchanged behaviour, plus face hooks).
+// ---------------------------------------------------------------------------
+
 const SAMPLE_INCIDENT = {
   type: "login_after_brute_force",
   severity: "CRITICAL",
@@ -121,6 +318,7 @@ function showError(msg) {
   el.style.display = "block";
   el.textContent = msg;
   $("result").style.display = "none";
+  faceSet("error", "Hmm — " + msg);
 }
 
 function showResult(v) {
@@ -138,6 +336,8 @@ function showResult(v) {
       (actions ? '<ul class="actions">' + actions + '</ul>' : '') +
     '</div>';
   el.style.display = "block";
+  faceSet("verdict", "Verdict: " + v.verdict + " · " + v.severity, v.verdict);
+  speakVerdict(v);
 }
 
 function escapeHtml(s) {
@@ -174,6 +374,7 @@ $("triage").addEventListener("click", async () => {
   const btn = $("triage");
   btn.disabled = true;
   btn.textContent = "Triaging…";
+  faceSet("thinking", "Triaging…");
   try {
     const res = await fetch("/api/triage", {
       method: "POST",
@@ -195,6 +396,7 @@ $("triage").addEventListener("click", async () => {
 });
 
 $("item").value = JSON.stringify(SAMPLE_INCIDENT, null, 2);
+faceStart();
 loadEvals();
 </script>
 </body>

@@ -57,6 +57,14 @@ class AppTests(unittest.TestCase):
         self.assertIn(b"SOC Agent", body)
         self.assertIn(b"manifest.json", body)
 
+    def test_home_page_has_face(self):
+        # Step 5: the particle humanoid that shows the agent's state.
+        status, body = self.get("/")
+        self.assertEqual(status, 200)
+        self.assertIn(b'id="face"', body)
+        self.assertIn(b"Speak verdicts", body)
+        self.assertIn(b"face-status", body)
+
     def test_health(self):
         status, body = self.get("/api/health")
         self.assertEqual(status, 200)
